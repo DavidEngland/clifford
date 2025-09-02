@@ -126,7 +126,13 @@ Galilean invariance is the symmetry of the laws of motion under Galilean transfo
 - Introduction to geometric algebra
 - Clifford algebra and applications to continuum mechanics
 - Coordinate-free formulations
-- **Lab:** Implementing geometric algebra operations
+- **Lie Derivatives in Continuum Mechanics:**
+  - Definition and geometric interpretation of the Lie derivative
+  - Connection to material derivatives and transport phenomena
+  - Role in describing deformation and flow
+  - Application to symmetry analysis and conservation laws
+  - Relationship between Lie derivatives and variation of action integrals
+- **Lab:** Implementing geometric algebra operations and Lie derivative calculations
 
 ### Week 11: Numerical Methods for Variational Problems
 - Galerkin methods

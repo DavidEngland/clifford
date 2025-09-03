@@ -1,0 +1,370 @@
+# Laboratory Exercise: Atmospheric Dispersion Modeling
+## Combining Eulerian Weather Models with Lagrangian Particle Tracking
+
+### Introduction
+
+In this laboratory exercise, you will develop a simplified atmospheric dispersion model that combines:
+1. An Eulerian framework for weather variables (fixed grid points)
+2. A Lagrangian framework for tracking pollutant particles (moving with the flow)
+
+You will also implement diurnal (day/night) variations in atmospheric conditions to observe how dispersion patterns change throughout a 24-hour cycle.
+
+### Learning Objectives
+
+By the end of this lab, you should be able to:
+- Distinguish between Eulerian and Lagrangian modeling approaches
+- Implement a simple atmospheric boundary layer model with diurnal variations
+- Develop a particle tracking algorithm based on meteorological inputs
+- Visualize and analyze dispersion patterns under different atmospheric conditions
+- Explain how day/night cycles affect pollutant transport and diffusion
+
+### Part I: Theoretical Background
+
+#### Eulerian vs. Lagrangian Frameworks
+
+**Eulerian Framework:**
+- Fixed reference grid where variables are measured at specific locations
+- Weather models typically use this approach
+- Variables include: wind velocity, temperature, pressure, etc.
+- The focus is on "what's happening at this location?"
+
+**Lagrangian Framework:**
+- Follows individual particles as they move through space
+- Dispersion models often use this approach
+- Variables include: particle position, velocity, age, etc.
+- The focus is on "where is this particle going?"
+
+#### Diurnal Variations in the Atmosphere
+
+The atmospheric boundary layer (ABL) exhibits strong diurnal patterns:
+
+**Daytime Conditions:**
+- Solar heating creates thermal instability
+- Strong vertical mixing and turbulence
+- Deeper boundary layer (typically 1-2 km)
+- Enhanced dispersion, especially vertically
+
+**Nighttime Conditions:**
+- Radiative cooling creates thermal stability
+- Suppressed vertical mixing
+- Shallow boundary layer (often <300m)
+- Limited dispersion, with potential for pollutant trapping
+
+### Part II: The Simplified Weather Model (Eulerian)
+
+We'll implement a basic 2D grid-based weather model with the following components:
+
+#### 1. Wind Field Model
+
+For simplicity, we'll use an analytical wind field model rather than solving the full Navier-Stokes equations:
+
+```python
+def calculate_wind_field(x_grid, y_grid, hour):
+    """Calculate u and v wind components at each grid point"""
+    
+    # Base wind (could be from real data or simple pattern)
+    u_base = 3.0  # Base wind speed in x direction (m/s)
+    v_base = 1.0  # Base wind speed in y direction (m/s)
+    
+    # Diurnal variation in wind speed
+    # Wind speed often decreases at night and increases during day
+    time_factor = np.sin(2 * np.pi * (hour - 9) / 24)  # Maximum at 3pm (hour 15)
+    diurnal_factor = 0.5 + 0.5 * np.maximum(0, time_factor)
+    
+    # Spatial variation (optional complexity)
+    # Could add terrain effects, urban heat island, etc.
+    
+    # Final wind components
+    u = u_base * diurnal_factor * np.ones_like(x_grid)
+    v = v_base * diurnal_factor * np.ones_like(y_grid)
+    
+    return u, v
+```
+
+#### 2. Atmospheric Stability Model
+
+```python
+def calculate_stability_parameters(hour):
+    """Calculate atmospheric stability parameters based on time of day"""
+    
+    # Determine if it's day or night (simplified)
+    # Assuming sunrise at 6am and sunset at 6pm
+    is_daytime = (hour >= 6) and (hour < 18)
+    
+    if is_daytime:
+        # Daytime - unstable or neutral conditions
+        # Higher mixing height, stronger diffusion
+        mixing_height = 1000 + 500 * np.sin(np.pi * (hour - 6) / 12)  # Peaks at noon
+        sigma_z_factor = 1.0  # Vertical diffusion factor (higher = more diffusion)
+        sigma_h_factor = 0.8  # Horizontal diffusion factor
+    else:
+        # Nighttime - stable conditions
+        # Lower mixing height, suppressed diffusion
+        mixing_height = 300  # Shallow nighttime boundary layer
+        sigma_z_factor = 0.3  # Reduced vertical diffusion
+        sigma_h_factor = 0.5  # Reduced horizontal diffusion
+    
+    return {
+        'mixing_height': mixing_height,
+        'sigma_z_factor': sigma_z_factor,
+        'sigma_h_factor': sigma_h_factor,
+        'is_daytime': is_daytime
+    }
+```
+
+### Part III: The Lagrangian Dispersion Model
+
+Now we'll implement a simple particle tracking model that uses the Eulerian weather information.
+
+#### 1. Particle Class
+
+```python
+class Particle:
+    def __init__(self, x, y, z, release_time):
+        # Position
+        self.x = x
+        self.y = y
+        self.z = z
+        
+        # Metadata
+        self.release_time = release_time
+        self.age = 0  # Time since release in hours
+    
+    def update_position(self, u, v, stability, dt):
+        """Update particle position based on wind and diffusion"""
+        
+        # Convert dt from hours to seconds
+        dt_seconds = dt * 3600
+        
+        # Advection component (deterministic)
+        dx_advection = u * dt_seconds
+        dy_advection = v * dt_seconds
+        
+        # Diffusion component (random)
+        # Uses stability parameters to determine diffusion strength
+        sigma_h = 10 * stability['sigma_h_factor'] * np.sqrt(dt_seconds)
+        sigma_z = 5 * stability['sigma_z_factor'] * np.sqrt(dt_seconds)
+        
+        dx_diffusion = np.random.normal(0, sigma_h)
+        dy_diffusion = np.random.normal(0, sigma_h)
+        dz_diffusion = np.random.normal(0, sigma_z)
+        
+        # Update position
+        self.x += dx_advection + dx_diffusion
+        self.y += dy_advection + dy_diffusion
+        self.z += dz_diffusion
+        
+        # Boundary conditions
+        # Reflection at ground
+        if self.z < 0:
+            self.z = -self.z
+        
+        # Reflection at mixing height
+        if self.z > stability['mixing_height']:
+            self.z = 2 * stability['mixing_height'] - self.z
+        
+        # Update age
+        self.age += dt
+```
+
+#### 2. Dispersion Simulation
+
+```python
+def run_dispersion_simulation(
+    duration_hours=24,
+    dt=0.1,
+    num_particles=1000,
+    release_location=(0, 0, 10),
+    grid_size=(50, 50),
+    domain_size=(10000, 10000)  # 10km x 10km
+):
+    """Run a Lagrangian dispersion simulation"""
+    
+    # Initialize grid
+    x_grid, y_grid = np.meshgrid(
+        np.linspace(0, domain_size[0], grid_size[0]),
+        np.linspace(0, domain_size[1], grid_size[1])
+    )
+    
+    # Initialize particles (all released at t=0 for simplicity)
+    particles = [
+        Particle(release_location[0], release_location[1], release_location[2], 0)
+        for _ in range(num_particles)
+    ]
+    
+    # Storage for results
+    particle_positions = []
+    
+    # Time loop
+    current_hour = 0
+    while current_hour < duration_hours:
+        # Get current hour of day (0-23)
+        hour_of_day = current_hour % 24
+        
+        # Update Eulerian weather model
+        u, v = calculate_wind_field(x_grid, y_grid, hour_of_day)
+        stability = calculate_stability_parameters(hour_of_day)
+        
+        # Interpolate wind at particle locations
+        # (In a real model, you'd use proper interpolation)
+        u_at_particles = u[0, 0]  # Simplified
+        v_at_particles = v[0, 0]  # Simplified
+        
+        # Update each particle
+        for particle in particles:
+            particle.update_position(u_at_particles, v_at_particles, stability, dt)
+        
+        # Store current state
+        particle_positions.append([
+            (p.x, p.y, p.z, p.age, hour_of_day)
+            for p in particles
+        ])
+        
+        # Increment time
+        current_hour += dt
+    
+    return particle_positions, x_grid, y_grid
+```
+
+### Part IV: Visualization and Analysis
+
+#### 1. Visualizing Dispersion Patterns
+
+```python
+def visualize_dispersion(particle_positions, x_grid, y_grid):
+    """Create visualizations of the dispersion results"""
+    
+    # Prepare figure
+    fig = plt.figure(figsize=(15, 10))
+    
+    # 1. Particle positions at different times
+    display_hours = [0, 6, 12, 18, 23]
+    
+    for i, hour in enumerate(display_hours):
+        hour_idx = min(int(hour / dt), len(particle_positions) - 1)
+        
+        # Get particle positions at this time
+        positions = particle_positions[hour_idx]
+        x = [p[0] for p in positions]
+        y = [p[1] for p in positions]
+        z = [p[2] for p in positions]
+        
+        # Extract hour of day
+        hour_of_day = positions[0][4]
+        is_daytime = (hour_of_day >= 6) and (hour_of_day < 18)
+        
+        # Plot
+        ax = fig.add_subplot(2, 3, i+1, projection='3d')
+        scatter = ax.scatter(x, y, z, c=z, cmap='viridis', alpha=0.7)
+        ax.set_title(f"Hour {hour:.1f} ({hour_of_day:.1f}h - {'Day' if is_daytime else 'Night'})")
+        ax.set_xlabel('X (m)')
+        ax.set_ylabel('Y (m)')
+        ax.set_zlabel('Z (m)')
+        
+        # Add mixing height plane
+        stability = calculate_stability_parameters(hour_of_day)
+        mixing_height = stability['mixing_height']
+        ax.plot_surface(
+            x_grid[:5, :5], y_grid[:5, :5], 
+            np.ones((5, 5)) * mixing_height,
+            alpha=0.2, color='red'
+        )
+    
+    # 2. Concentration contours (horizontal slice)
+    ax = fig.add_subplot(2, 3, 6)
+    
+    # Create concentration grid from final positions
+    final_positions = particle_positions[-1]
+    x_final = [p[0] for p in final_positions]
+    y_final = [p[1] for p in final_positions]
+    
+    # Create 2D histogram (concentration)
+    hist, xedges, yedges = np.histogram2d(
+        x_final, y_final,
+        bins=[20, 20],
+        range=[[0, domain_size[0]], [0, domain_size[1]]]
+    )
+    
+    # Plot concentration contours
+    extent = [0, domain_size[0], 0, domain_size[1]]
+    contour = ax.contourf(hist.T, extent=extent, cmap='plasma')
+    ax.set_title('Final Concentration')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    plt.colorbar(contour, ax=ax, label='Particle count')
+    
+    plt.tight_layout()
+    return fig
+```
+
+### Part V: Lab Assignments and Analysis Questions
+
+1. **Basic Implementation**
+   - Implement the weather and dispersion models as described
+   - Run a 24-hour simulation with a continuous point source
+   - Visualize the results using the provided code
+
+2. **Parameter Sensitivity**
+   - Modify the stability parameters for day and night
+   - Change the release height and observe differences in dispersion
+   - Experiment with different wind patterns
+
+3. **Analysis Questions**
+   - How do dispersion patterns differ between day and night?
+   - What effect does the mixing height have on vertical dispersion?
+   - Why do we see more horizontal spread at night compared to vertical spread?
+   - How might urban environments modify these patterns?
+
+4. **Extensions (Advanced)**
+   - Implement a terrain feature (hill or valley)
+   - Add a diurnal wind pattern (e.g., sea breeze during day, land breeze at night)
+   - Include a deposition mechanism at the surface
+   - Model multiple sources with different emission rates
+
+### Part VI: Real-World Context
+
+#### Air Quality Applications
+- Pollution forecasting for urban areas
+- Industrial emissions monitoring
+- Emergency response for chemical spills or releases
+
+#### Operational Examples
+- The HYSPLIT model used by NOAA for dispersion prediction
+- Urban air quality forecasting systems
+- Emergency response systems for nuclear or chemical incidents
+
+### Part VII: Code Implementation Notes
+
+1. **Weather Data Integration**
+   - For a more realistic model, you can replace the simplified wind field with real data
+   - Sources: NOAA, local weather stations, reanalysis products
+
+2. **Stability Classification**
+   - Pasquill-Gifford stability classes (A-F) are commonly used
+   - You can implement these based on:
+     - Solar radiation (day) or cloud cover (night)
+     - Wind speed
+     - Surface roughness
+
+3. **Computational Efficiency**
+   - For large numbers of particles, consider vectorized operations
+   - For long simulations, implement particle "aging" and removal
+
+### References and Resources
+
+1. Stull, R.B. (1988). An Introduction to Boundary Layer Meteorology.
+2. Seinfeld, J.H. and Pandis, S.N. (2016). Atmospheric Chemistry and Physics.
+3. HYSPLIT Model Documentation: https://www.ready.noaa.gov/HYSPLIT.php
+4. GitHub repositories with sample implementations:
+   - https://github.com/rich-iannone/SplitR (R package for HYSPLIT)
+   - https://github.com/amcnicho/pyMCATk (Python Monte Carlo Atmospheric Transport)
+
+### Appendix: Full Implementation
+
+The complete code for this lab is available in the accompanying Python file. The file includes:
+1. The Eulerian weather model
+2. The Lagrangian particle dispersion model
+3. Visualization functions
+4. Example run script
+
+Good luck with your simulations!

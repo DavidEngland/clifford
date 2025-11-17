@@ -160,3 +160,8 @@ A highly detailed cinematic scene of a brass and copper steampunk ship named "La
 ```
 Photorealistic steampunk mathematical ship, intricate brass and copper machinery, "Lagrange" engraved on hull, crossing channel from France to England, equations billowing from smokestacks, floating scrolls with golden mathematical symbols, dramatic lighting, cinematic composition, detailed ocean waves, 8k, hyperdetailed, unreal engine rendering
 ```
+
+---
+
+## Note for instructors / optional exercise
+- Small quantum exercise (stabilizer tableau) is available as an example/homework: see "stabilizer tableau formalism.md" in the repository for a problem, hints, and a worked solution that students can study or be assigned.
